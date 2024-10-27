@@ -22,68 +22,71 @@ class ObjectiveTest:
         return trivial_sentences
 
     def identify_trivial_sentences(self, sentence):
-        tags = nltk.pos_tag(sentence)
-        if tags[0][1] == "RB" or len(nltk.word_tokenize(sentence)) < 4:
-            return None
+        # Ensure sentence is tokenized before tagging
+        tokens = nltk.word_tokenize(sentence)
+        pos_tokens = nltk.pos_tag(tokens)
         
-        noun_phrases = list()
-        grammer = r"""
+        # Check if sentence length or first POS tag should exit early
+        if pos_tokens[0][1] == "RB" or len(tokens) < 4:
+            return None
+
+        # Define the grammar for chunking noun phrases
+        noun_phrases = []
+        grammar = r"""
             CHUNK: {<NN>+<IN|DT>*<NN>+}
                 {<NN>+<IN|DT>*<NNP>+}
                 {<NNP>+<NNS>*}
-            """
-        chunker = nltk.RegexpParser(grammer)
-        tokens = nltk.word_tokenize(sentence)
-        pos_tokens = nltk.tag.pos_tag(tokens)
+        """
+        chunker = nltk.RegexpParser(grammar)
         tree = chunker.parse(pos_tokens)
 
+        # Extract noun phrases from the parsed tree
         for subtree in tree.subtrees():
             if subtree.label() == "CHUNK":
-                temp = ""
-                for sub in subtree:
-                    temp += sub[0]
-                    temp += " "
-                temp = temp.strip()
-                noun_phrases.append(temp)
-        
+                temp = " ".join([sub[0] for sub in subtree])
+                noun_phrases.append(temp.strip())
+
+        # Identify words to replace in the sentence
         replace_nouns = []
-        for word, _ in tags:
+        for word, _ in pos_tokens:
             for phrase in noun_phrases:
                 if phrase[0] == '\'':
                     break
                 if word in phrase:
-                    [replace_nouns.append(phrase_word) for phrase_word in phrase.split()[-2:]]
+                    replace_nouns.extend(phrase.split()[-2:])
                     break
-            if len(replace_nouns) == 0:
+            if not replace_nouns:
                 replace_nouns.append(word)
             break
-        
-        if len(replace_nouns) == 0:
+
+        # Return None if no replaceable nouns are found
+        if not replace_nouns:
             return None
-        
-        val = 99
-        for i in replace_nouns:
-            if len(i) < val:
-                val = len(i)
-            else:
-                continue
-        
+
+        # Find the shortest word length for Key
+        val = min(len(i) for i in replace_nouns)
+
+        # Prepare the trivial dictionary
         trivial = {
             "Answer": " ".join(replace_nouns),
             "Key": val
         }
 
+        # Generate similar answer options if only one noun to replace
         if len(replace_nouns) == 1:
             trivial["Similar"] = self.answer_options(replace_nouns[0])
         else:
             trivial["Similar"] = []
-        
+
+        # Create the question with blanks
         replace_phrase = " ".join(replace_nouns)
-        blanks_phrase = ("__________" * len(replace_nouns)).strip()
+        blanks_phrase = "__________ " * len(replace_nouns)
         expression = re.compile(re.escape(replace_phrase), re.IGNORECASE)
-        sentence = expression.sub(blanks_phrase, str(sentence), count=1)
+        sentence = expression.sub(blanks_phrase.strip(), sentence, count=1)
         trivial["Question"] = sentence
+
         return trivial
+
 
     @staticmethod
     def answer_options(word):
